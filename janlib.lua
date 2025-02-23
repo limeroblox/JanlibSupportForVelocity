@@ -2450,12 +2450,19 @@ function library:Init()
     self.hasInit = true
 
     self.base = library:Create("ScreenGui", {IgnoreGuiInset = true, ZIndexBehavior = Enum.ZIndexBehavior.Global})
-    if runService:IsStudio() then
-        self.base.Parent = script.Parent.Parent
-    else self.base.Parent = gethui()
-        pcall(function() self.base.RobloxLocked = true end)
-        self.base.Parent = game:GetService"CoreGui"
+
+if runService:IsStudio() then
+    self.base.Parent = script.Parent.Parent
+else
+    local success, hui = pcall(function() return gethui() end)
+    if success and hui then
+        self.base.Parent = hui
+    else
+        self.base.Parent = game:GetService("CoreGui")
     end
+
+    pcall(function() self.base.RobloxLocked = true end)
+end
 
     self.main = self:Create("ImageButton", {
         AutoButtonColor = false,
