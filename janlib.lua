@@ -2,16 +2,39 @@
 
 --LIBRARY START
 --Services
-getgenv().runService = game:GetService"RunService"
-getgenv().textService = game:GetService"TextService"
-getgenv().inputService = game:GetService"UserInputService"
-getgenv().tweenService = game:GetService"TweenService"
+local runService = cloneref(game:GetService"RunService")
+local textService = cloneref(game:GetService"TextService")
+local inputService = cloneref(game:GetService"UserInputService")
 
 if getgenv().library then
     getgenv().library:Unload()
 end
 
-local library = {design = getgenv().design == "kali" and "kali" or "uwuware", tabs = {}, draggable = true, flags = {}, title = "MeowWare", open = false, popup = nil, instances = {}, connections = {}, options = {}, notifications = {}, tabSize = 0, theme = {}, foldername = "cheatx_cnfgs", fileext = ".txt"}
+local library = {
+    design = getgenv().design == "kali" and "kali" or "uwuware",
+    tabs = {},
+    draggable = true,
+    flags = {},
+    title = "CheatX",
+    open = false,
+    popup = nil,
+    instances = {},
+    connections = {},
+    options = {},
+    notifications = {},
+    tabSize = 0,
+    theme = {},
+    foldername = "cheatx_cnfgs",
+    fileext = ".txt",
+    warning = nil,
+    slider = nil,
+    tooltip = nil,
+    base = nil,
+    main = nil,
+    currentTab = nil,
+    
+}
+
 getgenv().library = library
 
 --Locals
@@ -25,28 +48,24 @@ local whitelistedMouseinputs = { --add or remove mouse inputs if you find the ne
 }
 
 --Functions
-library.round = function(num, bracket)
+local function basicRound(num: number, bracket: number?)
+    return num - num % (bracket or 1)
+end
+
+function library.round(num: number | Vector2 | Vector3 | Color3, bracket: number?): (number | Vector2 | Vector3 | Color3, number?, number?)
     if typeof(num) == "Vector2" then
-        return Vector2.new(library.round(num.X), library.round(num.Y))
+        return Vector2.new(basicRound(num.X), basicRound(num.Y))
     elseif typeof(num) == "Vector3" then
-        return Vector3.new(library.round(num.X), library.round(num.Y), library.round(num.Z))
+        return Vector3.new(basicRound(num.X), basicRound(num.Y), basicRound(num.Z))
     elseif typeof(num) == "Color3" then
-        return library.round(num.r * 255), library.round(num.g * 255), library.round(num.b * 255)
+        return basicRound(num.R * 255), basicRound(num.G * 255), basicRound(num.B * 255)
     else
-        return num - num % (bracket or 1);
+        return basicRound(num, bracket)
     end
 end
 
---From: https://devforum.roblox.com/t/how-to-create-a-simple-rainbow-effect-using-tweenService/221849/2
-local chromaColor
-spawn(function()
-    while library and wait() do
-        chromaColor = Color3.fromHSV(tick() % 6 / 6, 1, 1)
-    end
-end)
-
-function library:Create(class, properties)
-    properties = properties or {}
+function library:Create(class, givenProps)
+    local properties = givenProps or {}
     if not class then return end
     local a = class == "Square" or class == "Line" or class == "Text" or class == "Quad" or class == "Circle" or class == "Triangle"
     local t = a and Drawing or Instance
@@ -60,7 +79,7 @@ end
 
 function library:AddConnection(connection, name, callback)
     callback = type(name) == "function" and name or callback
-    connection = connection:connect(callback)
+    connection = connection:Connect(callback)
     if name ~= callback then
         self.connections[name] = connection
     else
@@ -80,12 +99,13 @@ function library:Unload()
             i.object:Destroy()
         end
     end
-    for _, o in next, self.options do
-        if o.type == "toggle" and type(o.Setstate) == "function" then
-            coroutine.resume(coroutine.create(function() o.SetState(o) end))
+    if self.hasInit then
+        for _, o in next, self.options do
+            if o.type == "toggle" then
+                task.spawn(o.SetState, o)
+            end
         end
     end
-    library = nil
     getgenv().library = nil
 end
 
@@ -495,6 +515,7 @@ library.createButton = function(option, parent)
                 library.flags[option.flag] = true
             end
             if option.tip then
+                library.tooltip.Position = UDim2.new(0, input.Position.X + 26, 0, input.Position.Y + 36)
                 library.tooltip.Text = option.tip
                 library.tooltip.Size = UDim2.new(0, textService:GetTextSize(option.tip, 15, Enum.Font.Code, Vector2.new(9e9, 9e9)).X, 0, 20)
             end
@@ -510,6 +531,8 @@ library.createButton = function(option, parent)
         if input.UserInputType.Name == "MouseMovement" then
             if option.tip then
                 library.tooltip.Position = UDim2.new(0, input.Position.X + 26, 0, input.Position.Y + 36)
+                library.tooltip.Text = option.tip
+                library.tooltip.Size = UDim2.new(0, textService:GetTextSize(option.tip, 15, Enum.Font.Code, Vector2.new(9e9, 9e9)).X, 0, 20)
             end
         end
     end)
@@ -526,7 +549,6 @@ library.createBind = function(option, parent)
     option.hasInit = true
 
     local binding
-    local holding
     local Loop
 
     if option.sub then
@@ -552,6 +574,8 @@ library.createBind = function(option, parent)
         })
     end
 
+    option.subpos = 0
+
     local bindinput = library:Create(option.sub and "TextButton" or "TextLabel", {
         Position = UDim2.new(1, -6 - (option.subpos or 0), 0, option.sub and 2 or 3),
         SizeConstraint = Enum.SizeConstraint.RelativeYY,
@@ -569,7 +593,6 @@ library.createBind = function(option, parent)
     end
 
     local interest = option.sub and bindinput or option.main
-    local inContact
     interest.InputEnded:connect(function(input)
         if input.UserInputType.Name == "MouseButton1" then
             binding = true
@@ -591,7 +614,7 @@ library.createBind = function(option, parent)
                     option.callback(library.flags[option.flag], 0)
                 else
                     library.flags[option.flag] = true
-                    if Loop then Loop:Disconnect() option.callback(true, 0) end
+                    if Loop then Loop:Disconnect(); option.callback(true, 0) end
                     Loop = library:AddConnection(runService.RenderStepped, function(step)
                         if not inputService:GetFocusedTextBox() then
                             option.callback(nil, step)
@@ -617,7 +640,7 @@ library.createBind = function(option, parent)
     function option:SetKey(key)
         binding = false
         bindinput.TextColor3 = Color3.fromRGB(160, 160, 160)
-        if Loop then Loop:Disconnect() library.flags[option.flag] = false option.callback(true, 0) end
+        if Loop then Loop:Disconnect(); library.flags[option.flag] = false; option.callback(true, 0) end
         self.key = (key and key.Name) or key or self.key
         if self.key == "Backspace" then
             self.key = "none"
@@ -753,7 +776,8 @@ library.createSlider = function(option, parent)
             else
                 library.slider = option
                 option.slider.BorderColor3 = library.flags["Menu Accent Color"]
-                option:SetValue(option.min + ((input.Position.X - option.slider.AbsolutePosition.X) / option.slider.AbsoluteSize.X) * (option.max - option.min))
+                local newvalue = option.min + (math.clamp((input.Position.X - option.slider.AbsolutePosition.X) / option.slider.AbsoluteSize.X, 0, math.huge)^(option.exp) * (option.max - option.min))
+                option:SetValue(newvalue)
             end
         end
         if input.UserInputType.Name == "MouseMovement" then
@@ -787,17 +811,21 @@ library.createSlider = function(option, parent)
 
     function option:SetValue(value, nocallback)
         if typeof(value) ~= "number" then value = 0 end
-        value = library.round(value, option.float)
+        if tostring(value) == "nan" then value = self.min end
         value = math.clamp(value, self.min, self.max)
+        value = value < 1e9 and library.round(value, option.float) or (function(num, dp)
+            local mult = 10^(dp or 0)
+            return math.floor(num * mult + 0.5)/mult
+        end)(value, -math.floor(math.log10(value)) + 3)
         if self.min >= 0 then
-            option.fill:TweenSize(UDim2.new((value - self.min) / (self.max - self.min), 0, 1, 0), "Out", "Quad", 0.05, true)
+            option.fill.Size = UDim2.new((value - self.min) / (self.max - self.min), 0, 1, 0)
         else
-            option.fill:TweenPosition(UDim2.new((0 - self.min) / (self.max - self.min), 0, 0, 0), "Out", "Quad", 0.05, true)
-            option.fill:TweenSize(UDim2.new(value / (self.max - self.min), 0, 1, 0), "Out", "Quad", 0.1, true)
+            option.fill.Position = UDim2.new((0 - self.min) / (self.max - self.min), 0, 0, 0)
+            option.fill.Size = UDim2.new(value / (self.max - self.min), 0, 1, 0)
         end
         library.flags[self.flag] = value
         self.value = value
-        option.title.Text = (option.text == "nil" and "" or option.text .. ": ") .. option.value .. option.suffix
+        option.title.Text = (option.text == "nil" and "" or option.text .. ": ") .. string.format("%.14g", option.value) .. option.suffix
         if not nocallback then
             self.callback(value)
         end
@@ -918,7 +946,7 @@ library.createList = function(option, parent)
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ScrollBarImageColor3 = Color3.new(),
-        ScrollBarThickness = 3,
+        ScrollBarThickness = 10,
         ScrollingDirection = Enum.ScrollingDirection.Y,
         VerticalScrollBarInset = Enum.ScrollBarInset.Always,
         TopImage = "rbxasset://textures/ui/Scroll/scroll-middle.png",
@@ -969,7 +997,7 @@ library.createList = function(option, parent)
 
     option.listvalue.InputBegan:connect(function(input)
         if input.UserInputType.Name == "MouseButton1" then
-            if library.popup == option then library.popup:Close() return end
+            if library.popup == option then library.popup:Close(); return end
             if library.popup then
                 library.popup:Close()
             end
@@ -1133,9 +1161,10 @@ library.createList = function(option, parent)
             self.callback(self.value)
         end
     end
+
     delay(1, function()
         if library then
-            option:SetValue(option.value)
+            option:SetValue(option.value, option.nocallbackinit)
         end
     end)
 
@@ -1443,19 +1472,6 @@ library.createColorPickerWindow = function(option)
         Parent = option.mainHolder
     })
 
-    local Gradient = library:Create("UIGradient", {
-        Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
-            ColorSequenceKeypoint.new(0.17, Color3.fromRGB(255, 0, 255)),
-            ColorSequenceKeypoint.new(0.33, Color3.fromRGB(0, 0, 255)),
-            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
-            ColorSequenceKeypoint.new(0.67, Color3.fromRGB(0, 255, 0)),
-            ColorSequenceKeypoint.new(0.83, Color3.fromRGB(255, 255, 0)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0)),
-        }),
-        Parent = hueMain
-    })
-
     local hueSlider = library:Create("Frame", {
         ZIndex = 4,
         Position = UDim2.new(1 - hue, 0, 0, 0),
@@ -1468,7 +1484,7 @@ library.createColorPickerWindow = function(option)
     hueMain.InputBegan:connect(function(Input)
         if Input.UserInputType.Name == "MouseButton1" then
             editinghue = true
-            X = (hueMain.AbsolutePosition.X + hueMain.AbsoluteSize.X) - hueMain.AbsolutePosition.X
+            local X = (hueMain.AbsolutePosition.X + hueMain.AbsoluteSize.X) - hueMain.AbsolutePosition.X
             X = math.clamp((Input.Position.X - hueMain.AbsolutePosition.X) / X, 0, 0.995)
             option:SetColor(Color3.fromHSV(1 - X, sat, val))
         end
@@ -1504,8 +1520,8 @@ library.createColorPickerWindow = function(option)
     satval.InputBegan:connect(function(Input)
         if Input.UserInputType.Name == "MouseButton1" then
             editingsatval = true
-            X = (satval.AbsolutePosition.X + satval.AbsoluteSize.X) - satval.AbsolutePosition.X
-            Y = (satval.AbsolutePosition.Y + satval.AbsoluteSize.Y) - satval.AbsolutePosition.Y
+            local X = (satval.AbsolutePosition.X + satval.AbsoluteSize.X) - satval.AbsolutePosition.X
+            local Y = (satval.AbsolutePosition.Y + satval.AbsoluteSize.Y) - satval.AbsolutePosition.Y
             X = math.clamp((Input.Position.X - satval.AbsolutePosition.X) / X, 0.005, 1)
             Y = math.clamp((Input.Position.Y - satval.AbsolutePosition.Y) / Y, 0, 0.995)
             option:SetColor(Color3.fromHSV(hue, X, 1 - Y))
@@ -1515,13 +1531,13 @@ library.createColorPickerWindow = function(option)
     library:AddConnection(inputService.InputChanged, function(Input)
         if Input.UserInputType.Name == "MouseMovement" then
             if editingsatval then
-                X = (satval.AbsolutePosition.X + satval.AbsoluteSize.X) - satval.AbsolutePosition.X
-                Y = (satval.AbsolutePosition.Y + satval.AbsoluteSize.Y) - satval.AbsolutePosition.Y
+                local X = (satval.AbsolutePosition.X + satval.AbsoluteSize.X) - satval.AbsolutePosition.X
+                local Y = (satval.AbsolutePosition.Y + satval.AbsoluteSize.Y) - satval.AbsolutePosition.Y
                 X = math.clamp((Input.Position.X - satval.AbsolutePosition.X) / X, 0.005, 1)
                 Y = math.clamp((Input.Position.Y - satval.AbsolutePosition.Y) / Y, 0, 0.995)
                 option:SetColor(Color3.fromHSV(hue, X, 1 - Y))
             elseif editinghue then
-                X = (hueMain.AbsolutePosition.X + hueMain.AbsoluteSize.X) - hueMain.AbsolutePosition.X
+                local X = (hueMain.AbsolutePosition.X + hueMain.AbsoluteSize.X) - hueMain.AbsolutePosition.X
                 X = math.clamp((Input.Position.X - hueMain.AbsolutePosition.X) / X, 0, 0.995)
                 option:SetColor(Color3.fromHSV(1 - X, sat, val))
             elseif editingtrans then
@@ -1547,8 +1563,9 @@ library.createColorPickerWindow = function(option)
             return option:SetColor(color)
         end
 
-        local r, g, b = library.round(option.color)
+        r, g, b = library.round(option.color)
         option.rgbInput.Text = table.concat({r, g, b}, ",")
+        return
     end)
 
     option.hexInput.FocusLost:connect(function()
@@ -1558,8 +1575,9 @@ library.createColorPickerWindow = function(option)
             return option:SetColor(color)
         end
 
-        local r, g, b = library.round(option.color)
+        r, g, b = library.round(option.color)
         option.hexInput.Text = string.format("#%02x%02x%02x", r, g, b)
+        return
     end)
 
     function option:updateVisuals(Color)
@@ -1656,7 +1674,7 @@ library.createColor = function(option, parent)
     interest.InputBegan:connect(function(input)
         if input.UserInputType.Name == "MouseButton1" then
             if not option.mainHolder then library.createColorPickerWindow(option) end
-            if library.popup == option then library.popup:Close() return end
+            if library.popup == option then library.popup:Close(); return end
             if library.popup then library.popup:Close() end
             option.open = true
             local pos = option.main.AbsolutePosition
@@ -1740,6 +1758,8 @@ function library:AddTab(title, pos)
     local tab = {canInit = true, tabs = {}, columns = {}, title = tostring(title)}
     table.insert(self.tabs, pos or #self.tabs + 1, tab)
 
+    local library = self
+
     function tab:AddColumn()
         local column = {sections = {}, position = #self.columns, canInit = true, tab = self}
         table.insert(self.columns, column)
@@ -1747,6 +1767,8 @@ function library:AddTab(title, pos)
         function column:AddSection(title)
             local section = {title = tostring(title), options = {}, canInit = true, column = self}
             table.insert(self.sections, section)
+
+            local column = self
 
             function section:AddLabel(text)
                 local option = {text = text}
@@ -1786,7 +1808,7 @@ function library:AddTab(title, pos)
                 option = typeof(option) == "table" and option or {}
                 option.section = self
                 option.text = tostring(option.text)
-                option.state = option.state == nil and nil or (typeof(option.state) == "boolean" and option.state or false)
+                option.state = typeof(option.state) == "boolean" and option.state or false
                 option.callback = typeof(option.callback) == "function" and option.callback or function() end
                 option.type = "toggle"
                 option.position = #self.options
@@ -1860,7 +1882,7 @@ function library:AddTab(title, pos)
                     subOption = typeof(subOption) == "table" and subOption or {}
                     subOption.sub = true
                     subOption.subpos = self.subcount * 24
-                    function subOption:getMain() option.main.Size = UDim2.new(1, 0, 0, 40) return option.main end
+                    function subOption:getMain() option.main.Size = UDim2.new(1, 0, 0, 40); return option.main end
                     self.subcount = self.subcount + 1
                     return section:AddBind(subOption)
                 end
@@ -1869,7 +1891,7 @@ function library:AddTab(title, pos)
                     subOption = typeof(subOption) == "table" and subOption or {}
                     subOption.sub = true
                     subOption.subpos = self.subcount * 24
-                    function subOption:getMain() option.main.Size = UDim2.new(1, 0, 0, 40) return option.main end
+                    function subOption:getMain() option.main.Size = UDim2.new(1, 0, 0, 40); return option.main end
                     self.subcount = self.subcount + 1
                     return section:AddColor(subOption)
                 end
@@ -1912,6 +1934,7 @@ function library:AddTab(title, pos)
                 option = typeof(option) == "table" and option or {}
                 option.section = self
                 option.text = tostring(option.text)
+                option.exp = typeof(option.exp) == "number" and option.exp or 1
                 option.min = typeof(option.min) == "number" and option.min or 0
                 option.max = typeof(option.max) == "number" and option.max or 0
                 option.value = option.min < 0 and 0 or math.clamp(typeof(option.value) == "number" and option.value or option.min, option.min, option.max)
@@ -1979,6 +2002,7 @@ function library:AddTab(title, pos)
                 option.subcount = 0
                 option.canInit = (option.canInit ~= nil and option.canInit) or true
                 option.tip = option.tip and tostring(option.tip)
+                option.nocallbackinit = type(option.nocallbackinit) == "boolean" and option.nocallbackinit or false
                 library.flags[option.flag] = option.value
                 table.insert(self.options, option)
                 library.options[option.flag] = option
@@ -2264,6 +2288,8 @@ function library:AddWarning(warning)
     warning.text = tostring(warning.text) 
     warning.type = warning.type == "confirm" and "confirm" or ""
 
+    local library = self
+
     local answer
     function warning:Show()
         library.warning = warning
@@ -2450,19 +2476,12 @@ function library:Init()
     self.hasInit = true
 
     self.base = library:Create("ScreenGui", {IgnoreGuiInset = true, ZIndexBehavior = Enum.ZIndexBehavior.Global})
-
-if runService:IsStudio() then
-    self.base.Parent = script.Parent.Parent
-else
-    local success, hui = pcall(function() return gethui() end)
-    if success and hui then
-        self.base.Parent = hui
+    if runService:IsStudio() and script.Parent then
+        self.base.Parent = script.Parent.Parent
     else
-        self.base.Parent = game:GetService("CoreGui")
+        pcall(function() self.base.RobloxLocked = true end)
+        self.base.Parent = gethui()
     end
-
-    pcall(function() self.base.RobloxLocked = true end)
-end
 
     self.main = self:Create("ImageButton", {
         AutoButtonColor = false,
@@ -2509,7 +2528,7 @@ end
         Image = "rbxassetid://2454009026",
         ImageColor3 = Color3.new(),
         ImageTransparency = 0.4,
-        Parent = top
+        Parent = self.top
     })
 
     self.tabHighlight = self:Create("Frame", {
@@ -2586,7 +2605,7 @@ end
         end
     end)
 
-    function self:selectTab(tab)
+    function library:selectTab(tab)
         if self.currentTab == tab then return end
         if library.popup then library.popup:Close() end
         if self.currentTab then
@@ -2598,8 +2617,8 @@ end
         self.main.Size = UDim2.new(0, 16 + ((#tab.columns < 2 and 2 or #tab.columns) * 239), 0, 600)
         self.currentTab = tab
         tab.button.TextColor3 = library.flags["Menu Accent Color"]
-        self.tabHighlight:TweenPosition(UDim2.new(0, tab.button.Position.X.Offset, 0, 50), "Out", "Quad", 0.2, true)
-        self.tabHighlight:TweenSize(UDim2.new(0, tab.button.AbsoluteSize.X, 0, -1), "Out", "Quad", 0.1, true)
+        self.tabHighlight.Position = UDim2.new(0, tab.button.Position.X.Offset, 0, 50)
+        self.tabHighlight.Size = UDim2.new(0, tab.button.AbsoluteSize.X, 0, -1)        
         for _, column in next, tab.columns do
             column.main.Visible = true
         end
@@ -2640,15 +2659,14 @@ end
         if not self.open then return end
         
         if input.UserInputType.Name == "MouseMovement" then
-            
             if self.slider then
-                self.slider:SetValue(self.slider.min + ((input.Position.X - self.slider.slider.AbsolutePosition.X) / self.slider.slider.AbsoluteSize.X) * (self.slider.max - self.slider.min))
+                self.slider:SetValue(self.slider.min + (math.clamp((input.Position.X - self.slider.slider.AbsolutePosition.X) / self.slider.slider.AbsoluteSize.X, 0, math.huge)^(self.slider.exp) * (self.slider.max - self.slider.min)))
             end
         end
         if input == dragInput and dragging and library.draggable then
             local delta = input.Position - dragStart
             local yPos = (startPos.Y.Offset + delta.Y) < -36 and -36 or startPos.Y.Offset + delta.Y
-            dragObject:TweenPosition(UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, yPos), "Out", "Quint", 0.1, true)
+            dragObject.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, yPos)
         end
     end)
 
@@ -2672,47 +2690,6 @@ end
     end
 end
 
-local function promptLib()
-    local RunService = game:GetService("RunService")
-    local CoreGui = game:GetService("CoreGui")
-
-    local ErrorPrompt = getrenv().require(CoreGui.RobloxGui.Modules.ErrorPrompt)
-    local function NewScreen(ScreenName)
-        local Screen = Instance.new("ScreenGui")
-        Screen.Name = ScreenName
-        Screen.ResetOnSpawn = false
-        Screen.IgnoreGuiInset = true
-        sethiddenproperty(Screen,
-        "OnTopOfCoreBlur",true)
-        Screen.RobloxLocked = true 
-        Screen.Parent = CoreGui
-        return Screen
-    end
-
-    return function(Title,Message,Buttons)
-        local Screen = NewScreen("Prompt")
-        local Prompt = ErrorPrompt.new("Default",{
-            MessageTextScaled = false,
-            PlayAnimation = false,
-            HideErrorCode = true
-        })
-        for Index,Button in pairs(Buttons) do
-            local Old = Button.Callback
-            Button.Callback = function(...)
-                RunService:SetRobloxGuiFocused(false)
-                Prompt:_close()
-                Screen:Destroy()
-                return Old(...)
-            end
-        end
-
-        Prompt:setErrorTitle(Title)
-        Prompt:updateButtons(Buttons)
-        Prompt:setParent(Screen)
-        RunService:SetRobloxGuiFocused(true)
-        Prompt:_open(Message)
-        return Prompt,Screen
-    end
-end 
-
 --LIBRARY END
+
+return library
